@@ -1,0 +1,10 @@
+DBT_LEARNINGS:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      role: ACCOUNTADMIN
+      warehouse: COMPUTE_WH
+      database: SILVER_DB
+      schema: POSTGRES
+      threads: 8

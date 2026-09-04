@@ -1,0 +1,34 @@
+name: DBT_LEARNINGS
+version: 1.0.0
+config-version: 2
+profile: DBT_LEARNINGS
+model-paths:
+  - models
+analysis-paths:
+  - analyses
+test-paths:
+  - tests
+seed-paths:
+  - seeds
+macro-paths:
+  - macros
+snapshot-paths:
+  - snapshots
+clean-targets:
+  - target
+  - dbt_packages
+models:
+  DBT_LEARNINGS:
+    raw:
+      +database: raw_db
+      +materialized: table
+      
+
+    transform:
+      +database: silver_db      
+      +materialized: table 
+
+    consumption:
+      +database: gold_db
+      +materialized: table   
+      +transient: false
