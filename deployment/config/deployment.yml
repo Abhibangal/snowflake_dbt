@@ -159,7 +159,7 @@ dbt:
   project_dir: dbt
   project_name: DBT
   database_layer: DBT
-  schema: POSTGRES
+  schema: PROJECTS_SCH
 
   default_target:
     DEV: dev
