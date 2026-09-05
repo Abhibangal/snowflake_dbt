@@ -7,7 +7,7 @@ snowflake:
   account: ${SNOWFLAKE_ACCOUNT}
   user: ${SNOWFLAKE_USER}
 
-  role: CICD_DEPLOY_ROLE
+  role: ACCOUNTADMIN
   warehouse: COMPUTE_WH
 
   private_key_path: ${SNOWFLAKE_PRIVATE_KEY_PATH}
