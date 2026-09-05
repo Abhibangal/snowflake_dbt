@@ -1,6 +1,4 @@
 snowflake-connector-python==3.17.3
 schemachange==4.1.0
-snowflake-cli>=3.25.0
 PyYAML==6.0.2
 cryptography==45.0.5
-jinja2>=3.1.0
