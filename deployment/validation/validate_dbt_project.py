@@ -7,6 +7,8 @@ Validate the dbt project layout used by snow dbt deploy.
 
 from pathlib import Path
 
+from deployment.core.jinja_vars import resolve_dbt_schema
+
 
 class DbtProjectValidator:
 
@@ -43,9 +45,10 @@ class DbtProjectValidator:
                 if not path.is_dir():
                     missing.append(str(path))
 
+        _schema_key, schema = resolve_dbt_schema(self.deployment_config)
         task_dir = Path("snowflake") / "tasks" / dbt_config.get(
             "database_layer", "TRANSFORM"
-        ) / dbt_config.get("schema", "POSTGRES")
+        ) / schema
         if not task_dir.is_dir():
             missing.append(str(task_dir))
         elif not any(task_dir.glob("R__*.sql")):
@@ -60,7 +63,6 @@ class DbtProjectValidator:
             raise ValueError("dbt project validation failed.")
 
         project_name = dbt_config.get("project_name", "DBT")
-        schema = dbt_config.get("schema", "POSTGRES")
         self.logger.info(
             f"dbt project validation successful ({project_dir}, "
             f"object={project_name}, schema={schema})."

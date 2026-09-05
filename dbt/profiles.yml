@@ -6,7 +6,7 @@ DBT:
       role: {{ snowflake_role }}
       warehouse: {{ warehouses.ELT }}
       database: {{ databases.TRANSFORM }}
-      schema: POSTGRES
+      schema: {{ dbt_schema }}
       threads: 8
 
     prod:
@@ -14,5 +14,5 @@ DBT:
       role: {{ snowflake_role }}
       warehouse: {{ warehouses.ELT }}
       database: {{ databases.TRANSFORM }}
-      schema: POSTGRES
+      schema: {{ dbt_schema }}
       threads: 8

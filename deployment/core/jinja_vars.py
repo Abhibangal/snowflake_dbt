@@ -95,6 +95,36 @@ def resolve_schema_code(schema_folder: str, schema_codes: dict[str, str]) -> str
     return normalized.replace("_", "")
 
 
+def resolve_dbt_schema(deployment_config: dict) -> tuple[str, str]:
+    """
+    Resolve the dbt Snowflake schema from access_roles.schema_codes.
+
+    dbt.schema is the map key (POSTGRES, PROJECTS).
+    The value is the Snowflake schema (POSTGRES, PROJECTS_SCH).
+    """
+
+    dbt_config = deployment_config.get("dbt", {})
+    schema_codes = get_schema_codes(deployment_config)
+    schema_key = str(dbt_config.get("schema") or "").upper()
+
+    if not schema_key:
+        if len(schema_codes) == 1:
+            schema_key = next(iter(schema_codes))
+        else:
+            raise ValueError(
+                "dbt.schema must be set to a key in access_roles.schema_codes "
+                f"({', '.join(sorted(schema_codes))})."
+            )
+
+    if schema_key not in schema_codes:
+        raise ValueError(
+            f"dbt.schema '{schema_key}' is not a key in access_roles.schema_codes. "
+            f"Configured keys: {', '.join(sorted(schema_codes))}."
+        )
+
+    return schema_key, schema_codes[schema_key]
+
+
 def build_access_role(
     environment: str,
     layer: str,
@@ -167,7 +197,7 @@ def build_dbt_vars(environment: str, deployment_config: dict) -> dict:
     target = default_targets.get(env) or ("prod" if env == "PROD" else "dev")
     args_by_env = dbt_config.get("args", {})
     args = args_by_env.get(env) or f"run --target {target}"
-    schema = dbt_config.get("schema", "POSTGRES")
+    schema_key, schema = resolve_dbt_schema(deployment_config)
     database_layer = dbt_config.get("database_layer", "TRANSFORM").upper()
     databases = build_databases(environment, get_database_layers(deployment_config))
 
@@ -180,6 +210,7 @@ def build_dbt_vars(environment: str, deployment_config: dict) -> dict:
     return {
         "dbt_project_name": dbt_config.get("project_name", "DBT"),
         "dbt_target": target,
+        "dbt_schema_key": schema_key,
         "dbt_schema": schema,
         "dbt_database_layer": database_layer,
         "dbt_database": databases[database_layer],
