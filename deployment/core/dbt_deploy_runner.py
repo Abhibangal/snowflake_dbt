@@ -60,7 +60,7 @@ class DbtDeployRunner:
 
         return [name for name in names if name in DbtDeployRunner.COPY_IGNORE_NAMES]
 
-    RENDER_FILES = ("dbt_project.yml", "profiles.yml", "dbt_projects_profiles.yml")
+    RENDER_SUFFIXES = {".yml", ".yaml"}
 
     def __init__(self, deployment_config, logger, environment, dry_run=False):
         self.deployment_config = deployment_config
@@ -130,21 +130,30 @@ class DbtDeployRunner:
         }
 
     def _render_project_files(self, project_dir: Path, render_vars: dict) -> None:
-        """Render only dbt config YAML so model Jinja like {{ ref() }} is left intact."""
+        """
+        Replace {{ databases.* }} from deployment.yml using the branch environment.
+        Only YAML is rendered so model SQL like {{ ref() }} is left intact.
+        """
 
         jinja_env = Environment()
 
-        for filename in self.RENDER_FILES:
-            path = project_dir / filename
-
-            if not path.is_file():
+        for path in sorted(project_dir.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in self.RENDER_SUFFIXES:
                 continue
 
-            rendered = jinja_env.from_string(
-                path.read_text(encoding="utf-8")
-            ).render(**render_vars)
-            path.write_text(rendered + ("" if rendered.endswith("\n") else "\n"), encoding="utf-8")
-            self.logger.info(f"Rendered dbt config: {filename}")
+            original = path.read_text(encoding="utf-8")
+            if "{{" not in original:
+                continue
+
+            rendered = jinja_env.from_string(original).render(**render_vars)
+            path.write_text(
+                rendered + ("" if rendered.endswith("\n") else "\n"),
+                encoding="utf-8",
+            )
+            self.logger.info(
+                f"Rendered dbt YAML from deployment.yml ({self.environment}): "
+                f"{path.relative_to(project_dir)}"
+            )
 
     def _build_command(
         self,
