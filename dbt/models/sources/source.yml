@@ -1,6 +1,6 @@
 sources:
   - name: postgres
-    database: {{ databases.RAW }}  
+    database: {{ databases.RAW }}
     schema: postgres  
     tables:
       - name: assoc_quotes_companies
