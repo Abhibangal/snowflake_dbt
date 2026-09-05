@@ -20,15 +20,15 @@ clean-targets:
 models:
   DBT:
     raw:
-      +database: "{{ databases.RAW }}"
+      +database: {{ databases.RAW }}
       +materialized: table
       
 
     transform:
-      +database: "{{ databases.TRANSFORM }}"
+      +database: {{ databases.TRANSFORM }}
       +materialized: table 
 
     consumption:
-      +database: "{{ databases.CONSUMPTION }}"
+      +database: {{ databases.CONSUMPTION }}
       +materialized: table   
       +transient: false
