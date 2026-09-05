@@ -1,0 +1,18 @@
+DBT:
+  target: {{ dbt_target }}
+  outputs:
+    dev:
+      type: snowflake
+      role: {{ snowflake_role }}
+      warehouse: {{ warehouses.ELT }}
+      database: {{ databases.TRANSFORM }}
+      schema: POSTGRES
+      threads: 8
+
+    prod:
+      type: snowflake
+      role: {{ snowflake_role }}
+      warehouse: {{ warehouses.ELT }}
+      database: {{ databases.TRANSFORM }}
+      schema: POSTGRES
+      threads: 8

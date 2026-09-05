@@ -1,7 +1,7 @@
-name: DBT_LEARNINGS
+name: DBT
 version: 1.0.0
 config-version: 2
-profile: DBT_LEARNINGS
+profile: DBT
 model-paths:
   - models
 analysis-paths:
@@ -18,17 +18,17 @@ clean-targets:
   - target
   - dbt_packages
 models:
-  DBT_LEARNINGS:
+  DBT:
     raw:
-      +database: raw_db
+      +database: "{{ databases.RAW }}"
       +materialized: table
       
 
     transform:
-      +database: silver_db      
+      +database: "{{ databases.TRANSFORM }}"
       +materialized: table 
 
     consumption:
-      +database: gold_db
+      +database: "{{ databases.CONSUMPTION }}"
       +materialized: table   
       +transient: false
