@@ -163,6 +163,8 @@ dbt:
     DEV: dev
     PROD: prod
 
+  # Passed to EXECUTE DBT PROJECT on TASK_EXECUTE_DBT (dbt run / build).
+  # Not used by `snow dbt deploy` — that CLI command only publishes the project object.
   args:
     DEV: "run --target dev"
     PROD: "run --target prod"

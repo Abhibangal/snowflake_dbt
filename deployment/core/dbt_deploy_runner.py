@@ -43,14 +43,22 @@ def _snow_executable() -> str:
 class DbtDeployRunner:
     """Render env-specific dbt YAML and publish the dbt project object."""
 
-    COPY_IGNORE = shutil.ignore_patterns(
-        "target",
-        "dbt_packages",
-        "dbt_modules",
-        "logs",
-        "__pycache__",
-        ".user.yml",
+    COPY_IGNORE_NAMES = frozenset(
+        {
+            "target",
+            "dbt_packages",
+            "dbt_modules",
+            "logs",
+            "__pycache__",
+            ".user.yml",
+        }
     )
+
+    @staticmethod
+    def _copy_ignore(src, names, *unused):
+        """Ignore dbt artifacts. *unused keeps this compatible with Python 3.14 copytree."""
+
+        return [name for name in names if name in DbtDeployRunner.COPY_IGNORE_NAMES]
 
     RENDER_FILES = ("dbt_project.yml", "profiles.yml", "dbt_projects_profiles.yml")
 
@@ -89,7 +97,7 @@ class DbtDeployRunner:
             shutil.copytree(
                 source_dir,
                 rendered_dir,
-                ignore=self.COPY_IGNORE,
+                ignore=self._copy_ignore,
                 dirs_exist_ok=False,
             )
             self._render_project_files(rendered_dir, render_vars)
