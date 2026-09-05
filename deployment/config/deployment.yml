@@ -159,8 +159,6 @@ dbt:
   project_dir: dbt
   project_name: DBT
   database_layer: DBT
-  # Key in access_roles.schema_codes. Snowflake schema is the mapped value
-  # (POSTGRES -> POSTGRES, PROJECTS -> PROJECTS_SCH).
   schema: POSTGRES
 
   default_target:
