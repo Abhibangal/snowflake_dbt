@@ -3,14 +3,14 @@ DBT:
   outputs:
     dev:
       type: snowflake
-      role: CICD_DEPLOY_ROLE
+      role: ACCOUNTADMIN
       warehouse: COMPUTE_WH
       database: DEV_TRANSFORM
       schema: POSTGRES
       threads: 8
     prod:
       type: snowflake
-      role: CICD_DEPLOY_ROLE
+      role: ACCOUNTADMIN
       warehouse: COMPUTE_WH
       database: PROD_TRANSFORM
       schema: POSTGRES
