@@ -8,7 +8,7 @@ transient = false
 select 
         quote_id
         ,is_archived
-        ,create_at created_dt
+        ,created_at created_dt
         ,updated_at updated_dt
         ,url
         ,hs_status status
