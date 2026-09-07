@@ -39,7 +39,7 @@ select  id
         ,date(created_at) created_dt
         ,date(updated_at) updated_dt
         ,date(load_time) load_dt
-from {{ source('postgres','customers') }}
+from {{ source('postgres','customers') }} c
 {% if is_incremental() %}
-where date(load_time) > (select coalesce(max(date(load_time)),date('2010-01-01')) from {{ this }})
+where date(c.load_time) > (select coalesce(max(t.load_dt),date('2010-01-01')) from {{ this }}) t
 {% endif %}
