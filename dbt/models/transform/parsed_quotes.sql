@@ -23,5 +23,5 @@ select
 
 from {{ source('postgres','parsed_quotes') }} c
 {% if is_incremental() %}
-where date(c.load_time) > (select coalesce(max(t.load_dt),date('2010-01-01')) from {{ this }}) t
+where date(c.load_time) > (select coalesce(max(t.load_dt),date('2010-01-01')) from {{ this }} t) 
 {% endif %}
