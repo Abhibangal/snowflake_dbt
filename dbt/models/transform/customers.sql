@@ -41,5 +41,5 @@ select  id
         ,date(load_time) load_dt
 from {{ source('postgres','customers') }}
 {% if is_incremental() %}
-where load_time > (select coalesce(max(load_time),to_timestamp('2010-01-01')) from {{ this }})
+where date(load_time) > (select coalesce(max(date(load_time)),date('2010-01-01')) from {{ this }})
 {% endif %}

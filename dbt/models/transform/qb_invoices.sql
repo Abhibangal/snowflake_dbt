@@ -32,5 +32,5 @@ select
 
 from {{ source('postgres','qb_invoices') }}
 {% if is_incremental() %}
-where load_time > (select coalesce(max(load_time),to_timestamp('2010-01-01')) from {{ this }})
+where date(load_time) > (select coalesce(max(date(load_time)),date('2010-01-01')) from {{ this }})
 {% endif %}
