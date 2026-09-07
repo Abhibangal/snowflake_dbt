@@ -8,7 +8,7 @@ transient = false
 select  id
         ,sync_token
         ,display_name
-        ,coalesce(company_name,fully_qualified_name,'')
+        ,coalesce(company_name,fully_qualified_name,'')company_name
         ,fully_qualified_name
         ,print_on_check_name
         ,active
