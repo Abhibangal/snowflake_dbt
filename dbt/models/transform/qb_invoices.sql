@@ -30,7 +30,7 @@ select
     ,date(updated_at)updated_dt
     ,date(load_time)load_dt
 
-from {{ source('postgres','qb_invoices') }}
+from {{ source('postgres','qb_invoices') }} c
 {% if is_incremental() %}
-where date(load_time) > (select coalesce(max(date(load_time)),date('2010-01-01')) from {{ this }})
+where date(c.load_time) > (select coalesce(max(t.load_dt),date('2010-01-01')) from {{ this }}) t
 {% endif %}

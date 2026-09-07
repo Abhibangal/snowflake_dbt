@@ -21,7 +21,7 @@ select
         ,hs_quote_amount quote_amount
         ,date(load_time) load_dt        
 
-from {{ source('postgres','parsed_quotes') }}
+from {{ source('postgres','parsed_quotes') }} c
 {% if is_incremental() %}
-where date(load_time) > (select coalesce(max(date(load_time)),date('2010-01-01')) from {{ this }})
+where date(c.load_time) > (select coalesce(max(t.load_dt),date('2010-01-01')) from {{ this }}) t
 {% endif %}
