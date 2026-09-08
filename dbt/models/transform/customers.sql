@@ -5,7 +5,7 @@ incremental_strategy = 'append',
 transient = false
 )
 }}
-select  id
+select  id customer_id
         ,sync_token
         ,display_name
         ,coalesce(company_name,fully_qualified_name,'')company_name
