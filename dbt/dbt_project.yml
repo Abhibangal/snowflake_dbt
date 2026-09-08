@@ -32,3 +32,5 @@ models:
       +database: {{ databases.CONSUMPTION }}
       +materialized: table   
       +transient: false
+      ephemeral:
+        +materialized: ephemeral
