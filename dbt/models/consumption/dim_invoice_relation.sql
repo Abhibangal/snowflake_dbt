@@ -1,7 +1,7 @@
 {{
 config(
 materialized = 'incremental',
-schema = 'analtyics',
+schema = 'analytics',
 incremental_strategy = 'merge',
 unique_key='INVOICE_ID'
 )
