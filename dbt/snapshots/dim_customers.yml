@@ -1,6 +1,6 @@
 snapshots:
   - name: dim_customers
-    relation: ref('eph_customer')
+    relation: ref('eph_customers')
     config:
       database: {{ databases.CONSUMPTION }}
       schema: ANALYTICS
