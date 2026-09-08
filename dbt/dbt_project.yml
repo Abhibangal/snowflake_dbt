@@ -14,12 +14,17 @@ macro-paths:
   - macros
 snapshot-paths:
   - snapshots
-      DBT:
-        +database: {{ databases.CONSUMPTION }}
-
 clean-targets:
   - target
   - dbt_packages
+
+snapshots:
+  DBT:
+    +database: {{ databases.CONSUMPTION }}
+    +schema: ANALYTICS
+    +materialized: snapshot
+    +transient: false
+    
 models:
   DBT:
     raw:
