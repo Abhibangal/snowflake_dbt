@@ -1,19 +1,3 @@
-CREATE OR REPLACE PROCEDURE SP_REBUILD_SCD2(
-    SOURCE_TABLE      STRING,
-    TARGET_TABLE      STRING,
-    KEY_COL           STRING,
-    UPDATED_AT_COL    STRING,
-    TRACKED_COLS      ARRAY,
-    CREATED_AT_COL    STRING DEFAULT NULL,
-    END_DATE          STRING DEFAULT '9999-12-31'
-)
-RETURNS STRING
-LANGUAGE PYTHON
-RUNTIME_VERSION = '3.11'
-PACKAGES = ('snowflake-snowpark-python')
-IMPORTS = ('@{{ git_repository }}/branches/{{ git_branch }}/snowflake/snowpark/CONSUMPTION/ANALYTICS/SP_REBUILD_SCD2/src/main.py')
-HANDLER = 'main.run'
-EXECUTE AS CALLER;
 
 /*
 -- how to call this procedure:
@@ -43,3 +27,19 @@ EXECUTE AS CALLER;
 --     'created_dt'
 -- );
  */
+CREATE OR REPLACE PROCEDURE SP_REBUILD_SCD2(
+    SOURCE_TABLE      STRING,
+    TARGET_TABLE      STRING,
+    KEY_COL           STRING,
+    UPDATED_AT_COL    STRING,
+    TRACKED_COLS      ARRAY,
+    CREATED_AT_COL    STRING DEFAULT NULL,
+    END_DATE          STRING DEFAULT '9999-12-31'
+)
+RETURNS STRING
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python')
+IMPORTS = ('@{{ git_repository }}/branches/{{ git_branch }}/snowflake/snowpark/CONSUMPTION/ANALYTICS/SP_REBUILD_SCD2/src/main.py')
+HANDLER = 'main.run'
+EXECUTE AS CALLER;
