@@ -7,4 +7,6 @@ unique_key=['quote_id','company_id']
 )
 }}
 
-select * from {{ ref('assoc_quotes_companies') }}
+select  * 
+        ,current_date() as load_dt
+from {{ ref('assoc_quotes_companies') }}

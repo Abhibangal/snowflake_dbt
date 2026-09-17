@@ -7,4 +7,6 @@ unique_key='INVOICE_ID'
 )
 }}
 
-select * from {{ ref('invoice_relation') }}
+select  * 
+        ,current_date() as load_dt
+from {{ ref('invoice_relation') }}

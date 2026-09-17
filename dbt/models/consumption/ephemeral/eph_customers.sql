@@ -1,7 +1,7 @@
 with customers as
 (
 select
-    id customer_id
+         customer_id
         ,sync_token
         ,display_name
         ,company_name
