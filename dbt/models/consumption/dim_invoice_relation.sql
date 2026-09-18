@@ -8,5 +8,8 @@ unique_key='INVOICE_ID'
 }}
 
 select  * 
-        ,current_date() as load_dt
 from {{ ref('invoice_relation') }}
+qualify row_number() over (
+    partition by INVOICE_ID
+    order by updated_dt desc
+) = 1

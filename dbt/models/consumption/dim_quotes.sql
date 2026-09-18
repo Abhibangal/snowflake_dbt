@@ -1,6 +1,5 @@
 {% set deal_tracked_cols = [
          'is_archived'
-        ,'created_dt'
         ,'url'
         ,'status'
         ,'payment_status'
@@ -16,6 +15,7 @@
         materialized='incremental',
         unique_key=['quote_id', 'start_dt'],
         incremental_strategy='append',
+        schema = 'analytics',
         pre_hook=[
             "{{ scd2_close_old('parsed_quotes', 'quote_id', 'updated_dt', " ~ deal_tracked_cols ~ ") }}" 
         ]
