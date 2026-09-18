@@ -7,10 +7,6 @@ unique_key=['quote_id','company_id'],
 )
 }}
 
-select  * 
-        ,current_date() as load_dt
+select  distinct * 
+        
 from {{ ref('assoc_quotes_companies') }}
-qualify row_number() over (
-    partition by quote_id, company_id
-    order by updated_dt desc
-) = 1
