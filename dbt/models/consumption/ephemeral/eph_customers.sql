@@ -39,3 +39,4 @@ select
     from {{ ref('customers') }}
 )
 select * from customers
+qualify (row_number() over(partition by customer_id order by updated_dt desc)) = 1
