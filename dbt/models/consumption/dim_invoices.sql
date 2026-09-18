@@ -10,8 +10,8 @@ unique_key=['id']
 select      id
     ,sync_token
     ,doc_number
-    ,txn_date txn_dt
-    ,due_date due_dt
+    ,txn_dt
+    ,due_dt
     ,customer_id
     ,customer_name
     ,department_id
@@ -30,3 +30,7 @@ select      id
     ,current_date() as load_dt
 
 from {{ ref('qb_invoices') }}
+qualify row_number() over (
+    partition by id
+    order by updated_dt desc
+) = 1

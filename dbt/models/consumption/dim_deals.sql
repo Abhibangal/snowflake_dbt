@@ -20,6 +20,7 @@
         materialized='incremental',
         unique_key=['deal_id', 'start_dt'],
         incremental_strategy='append',
+        schema = 'analytics',
         pre_hook=[
             "{{ scd2_close_old('deals', 'deal_id', 'updated_dt', " ~ deal_tracked_cols ~ ") }}" 
         ]
