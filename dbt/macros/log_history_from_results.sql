@@ -4,7 +4,7 @@
         compile/parse, which is what `snow dbt deploy` does when publishing the
         project - logging there would record SUCCESS rows for models that were
         never materialized, and a failure here would break the deployment. -#}
-    {% if execute and results and flags.WHICH in ('run', 'build') %}
+    {% if execute and results and flags.WHICH in ('run', 'build', 'snapshot', 'seed') %}
 
         {%- set target_table = log_db() ~ '.' ~ var('log_schema', 'UTILS') ~ '.' ~ var('log_table', 'LOG_HISTORY') -%}
 

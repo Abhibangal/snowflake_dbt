@@ -27,7 +27,6 @@ select      id
     ,delivery_type
     ,created_dt
     ,updated_dt 
-    ,current_date() as load_dt
 
 from {{ ref('qb_invoices') }}
 qualify row_number() over (
