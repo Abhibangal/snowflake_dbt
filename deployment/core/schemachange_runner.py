@@ -51,6 +51,22 @@ class SchemaChangeRunner:
 
     GIT_DEPENDENT_OBJECT_TYPES = frozenset({"storedprocedures", "snowpark", "streamlit"})
 
+    # Object types whose SQL can SELECT from tables that *dbt* owns (dbt
+    # creates/materializes everything under RAW/TRANSFORM/CONSUMPTION - see
+    # the "tables/ and views/ are intentionally omitted" note in
+    # deployment.yml). If one of these is deployed before dbt has run, the
+    # underlying table may not exist yet and the deploy fails.
+    #
+    # Kept here in code (not in deployment.yml) on purpose: this is a code-level
+    # ordering constraint about *how* deploy.py sequences dbt vs. SchemaChange,
+    # not a per-environment setting someone should tune from the config file.
+    #
+    # Currently only "dynamic_tables" is empty/unused in this repo, but the
+    # moment real dynamic tables are added that read dbt-built tables, this
+    # is what keeps that safe. Add an object type here if it ever needs to
+    # read a dbt-owned table.
+    POST_DBT_OBJECT_TYPES = frozenset({"dynamic_tables"})
+
     def __init__(
         self,
         deployment_config,
@@ -68,22 +84,40 @@ class SchemaChangeRunner:
         self.git_refetch_callback = git_refetch_callback
         self.connections_file = None
 
-    def execute(self):
-        """Deploy all pending migrations grouped by folder-derived database/schema."""
+    def execute(self, object_types=None):
+        """
+        Deploy all pending migrations grouped by folder-derived database/schema.
+
+        object_types: optional iterable restricting this run to a subset of
+        deployment_order (e.g. only the object types that must run before, or
+        only the ones that must run after, dbt). None (the default) deploys
+        every object type, in one pass, as before.
+        """
 
         self.connections_file = self._write_connections_toml()
 
         try:
-            self._execute_deployments()
+            self._execute_deployments(object_types=object_types)
         finally:
             if self.connections_file and self.connections_file.exists():
                 self.connections_file.unlink()
 
-    def _execute_deployments(self):
+    def _execute_deployments(self, object_types=None):
         """Run schemachange for all discovered schema targets."""
 
         history_table = self._history_table()
         deployment_order = self.deployment_config["deployment_order"]
+
+        # Narrow to the requested object types, but keep the config's own
+        # ordering - object_types only decides *which* types run in this
+        # call, never the relative order between them.
+        if object_types is not None:
+            deployment_order = [
+                object_type
+                for object_type in deployment_order
+                if object_type in object_types
+            ]
+
         root_folder = self.deployment_config["schemachange"]["root_folder"]
 
         discovery = SchemaDiscovery(root_folder, deployment_order)

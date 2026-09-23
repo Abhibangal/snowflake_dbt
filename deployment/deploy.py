@@ -144,6 +144,50 @@ def main():
             False,
         )
 
+        # Deploy order is split into three phases around dbt, because dbt and
+        # SchemaChange depend on each other's output in opposite directions:
+        #
+        #   1. Pre-dbt SchemaChange  - object types dbt's on-run-end hooks call
+        #      into (e.g. storedprocedures: RAW.UTILS.SEND_SUCCESS_ALERT /
+        #      SEND_FAILURE_ALERT) must already exist before dbt runs, or the
+        #      hooks fail with "Unknown user-defined function".
+        #   2. dbt deploy            - creates/updates the RAW/TRANSFORM/
+        #      CONSUMPTION tables dbt owns, then safely runs its on-run-end
+        #      hooks against the objects from phase 1.
+        #   3. Post-dbt SchemaChange - object types that may read tables dbt
+        #      just built (SchemaChangeRunner.POST_DBT_OBJECT_TYPES, e.g.
+        #      dynamic_tables). Deploying these before dbt has published its
+        #      tables would fail with a Snowflake "does not exist" error.
+        #
+        # The pre/post split of "deployment_order" (from deployment.yml) is
+        # intentionally decided in code via SchemaChangeRunner.POST_DBT_OBJECT_TYPES,
+        # not in the config file - it's a structural ordering rule, not a
+        # per-environment setting.
+        schemachange = SchemaChangeRunner(
+            deployment_config,
+            schemachange_config,
+            logger,
+            environment,
+            dry_run=dry_run,
+            git_refetch_callback=(
+                fetch_git_repository if fetch_git_enabled else None
+            ),
+        )
+
+        all_object_types = set(deployment_config["deployment_order"])
+        post_dbt_object_types = SchemaChangeRunner.POST_DBT_OBJECT_TYPES
+        pre_dbt_object_types = all_object_types - post_dbt_object_types
+
+        logger.info("-----------------------------------------")
+        logger.info("Snowflake Object Deployment Started (pre-dbt)")
+        logger.info("-----------------------------------------")
+
+        schemachange.execute(object_types=pre_dbt_object_types)
+
+        logger.info("-----------------------------------------")
+        logger.info("Snowflake Object Deployment Completed Successfully (pre-dbt)")
+        logger.info("-----------------------------------------")
+
         if deployment_config.get("features", {}).get("dbt_deploy", False):
             logger.info("-----------------------------------------")
             logger.info("dbt Deployment Started")
@@ -160,24 +204,17 @@ def main():
             logger.info("dbt Deployment Completed Successfully")
             logger.info("-----------------------------------------")
 
+        # Post-dbt pass: object types that may read dbt-owned tables. Safe to
+        # call even when nothing matches (e.g. dynamic_tables/ is still
+        # empty today) - it just logs that no targets were discovered.
         logger.info("-----------------------------------------")
-        logger.info("Snowflake Object Deployment Started")
+        logger.info("Snowflake Object Deployment Started (post-dbt)")
         logger.info("-----------------------------------------")
 
-        schemachange = SchemaChangeRunner(
-            deployment_config,
-            schemachange_config,
-            logger,
-            environment,
-            dry_run=dry_run,
-            git_refetch_callback=(
-                fetch_git_repository if fetch_git_enabled else None
-            ),
-        )
-        schemachange.execute()
+        schemachange.execute(object_types=post_dbt_object_types)
 
         logger.info("-----------------------------------------")
-        logger.info("Snowflake Object Deployment Completed Successfully")
+        logger.info("Snowflake Object Deployment Completed Successfully (post-dbt)")
         logger.info("-----------------------------------------")
 
     finally:

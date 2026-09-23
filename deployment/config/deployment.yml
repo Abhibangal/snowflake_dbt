@@ -150,8 +150,9 @@ access_roles:
 
 # ==========================================================
 # dbt Projects on Snowflake
-# `snow dbt deploy` runs before SchemaChange so the task can
-# EXECUTE DBT PROJECT against the newly published object.
+# SchemaChange runs before `snow dbt deploy` so objects the dbt
+# on-run-end hooks depend on (e.g. RAW.UTILS.SEND_SUCCESS_ALERT /
+# SEND_FAILURE_ALERT) already exist by the time dbt executes.
 # ==========================================================
 
 dbt:
