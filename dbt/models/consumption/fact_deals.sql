@@ -16,7 +16,7 @@ select      deal_id
             ,created_dt
             ,updated_dt
             ,closed_Dt
-            ,current_date() as load_dt
+            ,load_dt
 from {{ ref('deals') }}
 qualify row_number() over (
     partition by deal_id, quote_id
