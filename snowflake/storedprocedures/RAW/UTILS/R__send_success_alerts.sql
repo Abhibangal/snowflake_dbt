@@ -41,8 +41,8 @@ BEGIN
 
     -- 3. Trigger the Snowflake Email Integration
     CALL SYSTEM$SEND_EMAIL(
-        ''MDC_EMAIL_NOTIFY_INTEGRATION'',
-        ''acs@mdcdatacenters.com,ajr@mdcdatacenters.com,pyp@mdcdatacenters.com'',
+        ''EMAIL_NOTIFY_INTEGRATION'',
+        ''abhij.it.bangal92@gmail.com'',
         :v_email_subject,
         :v_email_body,
         ''text/html''
