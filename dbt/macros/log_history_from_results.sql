@@ -35,13 +35,17 @@
                 {%- set rows_done = res.adapter_response.get('rows_affected') -%}
             {%- endif -%}
 
+            {#- INPUT_PARAMS is NULL rather than an empty JSON object: Snowflake
+                rejects VARIANT-producing functions like TRY_PARSE_JSON() inside an
+                INSERT ... VALUES clause ("Invalid expression in VALUES clause").
+                Populating it would need INSERT ... SELECT instead. -#}
             {%- set row -%}
                 (
                     '{{ job_id }}',
                     '{{ sp_name }}',
                     '{{ sp_database }}',
                     '{{ sp_schema }}',
-                    TRY_PARSE_JSON('{}'),
+                    NULL,
                     'INFO',
                     dateadd('second', -1 * {{ duration }}, current_timestamp()),
                     '{{ status }}',
