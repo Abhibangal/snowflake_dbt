@@ -1,6 +1,10 @@
 {% macro log_history_from_results(results) %}
     {#- Runs at on-run-end. Writes one LOG_HISTORY row per node, including failures. -#}
-    {% if execute and results %}
+    {#- flags.WHICH gates this to real data runs only. on-run-end also fires on
+        compile/parse, which is what `snow dbt deploy` does when publishing the
+        project - logging there would record SUCCESS rows for models that were
+        never materialized, and a failure here would break the deployment. -#}
+    {% if execute and results and flags.WHICH in ('run', 'build') %}
 
         {%- set target_table = log_db() ~ '.' ~ var('log_schema', 'UTILS') ~ '.' ~ var('log_table', 'LOG_HISTORY') -%}
 

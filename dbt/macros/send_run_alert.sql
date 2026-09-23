@@ -1,5 +1,8 @@
 {% macro send_run_alert() %}
-    {% if execute %}
+    {#- flags.WHICH gates alerting to real data runs only. on-run-end also fires
+        on compile/parse (what `snow dbt deploy` does), so without this guard every
+        deployment would send an email and any alert error would fail the deploy. -#}
+    {% if execute and flags.WHICH in ('run', 'build') %}
         {%- set alert_schema = var('log_schema', 'UTILS') -%}
         {%- set log_table = log_db() ~ '.' ~ alert_schema ~ '.' ~ var('log_table', 'LOG_HISTORY') -%}
 
