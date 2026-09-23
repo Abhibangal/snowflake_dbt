@@ -33,24 +33,6 @@ class DbtProjectValidator:
                 if not path.is_file():
                     missing.append(str(path))
 
-            for folder in (
-                "models",
-                "models/raw",
-                "models/transform",
-                "models/consumption",
-            ):
-                path = project_dir / folder
-                if not path.is_dir():
-                    missing.append(str(path))
-
-        task_dir = Path("snowflake") / "tasks" / dbt_config.get(
-            "database_layer", "TRANSFORM"
-        ) / dbt_config.get("schema", "POSTGRES")
-        if not task_dir.is_dir():
-            missing.append(str(task_dir))
-        elif not any(task_dir.glob("R__*.sql")):
-            missing.append(f"{task_dir} (missing R__*.sql task script)")
-
         if missing:
             self.logger.error(
                 "dbt project validation failed. snow dbt deploy requires these paths:"

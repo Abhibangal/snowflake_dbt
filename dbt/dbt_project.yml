@@ -17,18 +17,37 @@ snapshot-paths:
 clean-targets:
   - target
   - dbt_packages
+
+vars:
+  # logging location — reuses your existing RAW database mapping
+  log_database: "{{ databases.RAW }}"
+  log_schema: UTILS
+  log_table: LOG_HISTORY
+
+on-run-end:
+  - "{{ log_history_from_results(results) }}"
+  - "{{ send_run_alert() }}"
+
+snapshots:
+  DBT:
+    +database: "{{ databases.CONSUMPTION }}"
+    +schema: ANALYTICS
+    +materialized: snapshot
+    +transient: false
+
 models:
   DBT:
     raw:
       +database: "{{ databases.RAW }}"
       +materialized: table
-      
 
     transform:
       +database: "{{ databases.TRANSFORM }}"
-      +materialized: table 
+      +materialized: table
 
     consumption:
       +database: "{{ databases.CONSUMPTION }}"
-      +materialized: table   
+      +materialized: table
       +transient: false
+      ephemeral:
+        +materialized: ephemeral

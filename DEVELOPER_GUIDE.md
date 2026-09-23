@@ -21,7 +21,7 @@ For CI/CD workflow and grants configuration, see the main [README](README.md).
 | Use `{{ grant_role }}` or `{{ access_roles.RW }}` for grants | Hardcode access role names like `AR_DEV_RAW_CUSTOMERHUB_RW` in grant SQL |
 | Use Jinja for Git repo path, branch, grant roles, cross-layer DB refs, and warehouses | Hardcode `DEV_RAW` / `PROD_RAW`, Git branch paths, or `WH_DEV_*` / `WH_PROD_*` |
 | Open a PR to `dev` or `main` | Commit directly to `dev` or `main` |
-
+  
 ---
 
 ## 2. Folder structure

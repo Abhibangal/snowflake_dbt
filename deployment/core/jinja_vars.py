@@ -167,7 +167,7 @@ def build_dbt_vars(environment: str, deployment_config: dict) -> dict:
     target = default_targets.get(env) or ("prod" if env == "PROD" else "dev")
     args_by_env = dbt_config.get("args", {})
     args = args_by_env.get(env) or f"run --target {target}"
-    schema = dbt_config.get("schema", "POSTGRES")
+    schema = str(dbt_config.get("schema") or "POSTGRES").upper()
     database_layer = dbt_config.get("database_layer", "TRANSFORM").upper()
     databases = build_databases(environment, get_database_layers(deployment_config))
 

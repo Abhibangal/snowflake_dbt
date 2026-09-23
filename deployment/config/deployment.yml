@@ -83,6 +83,7 @@ database_layers:
   - RAW
   - TRANSFORM
   - CONSUMPTION
+  - DBT
 
 # ==========================================================
 # Version prefixes for V__ placeholder migrations (first migration in an empty repo).
@@ -106,12 +107,12 @@ version_prefixes:
 warehouses:
 
   DEVELOPER:
-    DEV: WH_DEV_DEVELOPER_XS
-    PROD: WH_PROD_DEVELOPER_XS
+    DEV: COMPUTE_WH
+    PROD: COMPUTE_WH
 
   ELT:
-    DEV: WH_DEV_ELT_XS
-    PROD: WH_PROD_ELT_XS
+    DEV: COMPUTE_WH
+    PROD: COMPUTE_WH
 
 # ==========================================================
 # Access roles (Jinja variables for snowflake/grants/**/*.sql)
@@ -139,7 +140,8 @@ access_roles:
 
   schema_codes:
     POSTGRES: POSTGRES
-    # CUSTOMER_HUB: CUSTOMERHUB
+    PROJECTS: PROJECTS_SCH
+    # CUSTOMER_HUB: CUSTOMERHUB 
     # HUBSPOT: HUBSPOT
     # QUICKBOOKS: QUICKBOOKS
     # REPORTING: REPORTING
@@ -148,16 +150,17 @@ access_roles:
 
 # ==========================================================
 # dbt Projects on Snowflake
-# `snow dbt deploy` runs before SchemaChange so the task can
-# EXECUTE DBT PROJECT against the newly published object.
+# SchemaChange runs before `snow dbt deploy` so objects the dbt
+# on-run-end hooks depend on (e.g. RAW.UTILS.SEND_SUCCESS_ALERT /
+# SEND_FAILURE_ALERT) already exist by the time dbt executes.
 # ==========================================================
 
 dbt:
 
   project_dir: dbt
   project_name: DBT
-  database_layer: TRANSFORM
-  schema: POSTGRES
+  database_layer: DBT
+  schema: PROJECTS_SCH
 
   default_target:
     DEV: dev
