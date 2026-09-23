@@ -6,13 +6,12 @@ Deploy the local dbt project to Snowflake with `snow dbt deploy`.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
-from jinja2 import Environment
 
 from deployment.core.jinja_vars import (
     build_databases,
@@ -61,6 +60,14 @@ class DbtDeployRunner:
         return [name for name in names if name in DbtDeployRunner.COPY_IGNORE_NAMES]
 
     RENDER_SUFFIXES = {".yml", ".yaml"}
+
+    # Matches only plain "{{ dotted.name }}" lookups - never "{{ macro(args) }}"
+    # calls, so dbt-runtime Jinja (e.g. on-run-end hooks) is left untouched for
+    # dbt itself to render, and only deploy-time vars (databases.*, dbt_target,
+    # ...) are substituted here.
+    _SIMPLE_VAR_PATTERN = re.compile(
+        r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*\}\}"
+    )
 
     def __init__(self, deployment_config, logger, environment, dry_run=False):
         self.deployment_config = deployment_config
@@ -132,10 +139,10 @@ class DbtDeployRunner:
     def _render_project_files(self, project_dir: Path, render_vars: dict) -> None:
         """
         Replace {{ databases.* }} from deployment.yml using the branch environment.
-        Only YAML is rendered so model SQL like {{ ref() }} is left intact.
+        Only plain "{{ dotted.name }}" lookups are substituted - macro calls like
+        the on-run-end hooks ({{ log_history_from_results(results) }}) are left
+        untouched for dbt to render at its own execution time.
         """
-
-        jinja_env = Environment()
 
         for path in sorted(project_dir.rglob("*")):
             if not path.is_file() or path.suffix.lower() not in self.RENDER_SUFFIXES:
@@ -145,7 +152,13 @@ class DbtDeployRunner:
             if "{{" not in original:
                 continue
 
-            rendered = jinja_env.from_string(original).render(**render_vars)
+            rendered = self._SIMPLE_VAR_PATTERN.sub(
+                lambda match: self._substitute_var(match, render_vars),
+                original,
+            )
+            if rendered == original:
+                continue
+
             path.write_text(
                 rendered + ("" if rendered.endswith("\n") else "\n"),
                 encoding="utf-8",
@@ -154,6 +167,20 @@ class DbtDeployRunner:
                 f"Rendered dbt YAML from deployment.yml ({self.environment}): "
                 f"{path.relative_to(project_dir)}"
             )
+
+    @staticmethod
+    def _substitute_var(match: re.Match, render_vars: dict) -> str:
+        """Resolve a dotted "{{ name.attr }}" token against render_vars, or
+        leave it as-is when it isn't one of the known deploy-time variables."""
+
+        value = render_vars
+        for part in match.group(1).split("."):
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return match.group(0)
+
+        return str(value)
 
     def _build_command(
         self,
