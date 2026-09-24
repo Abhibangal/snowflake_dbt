@@ -1,12 +1,36 @@
-# Snowflake CI/CD Framework
+# Snowflake & dbt CI/CD Framework
+
+**Unified deployment for Snowflake objects (SchemaChange) and dbt projects (dbt on Snowflake)**
 
 Author : Abhijit Bangal
 
 ---
 
+## New here? Read these first
+
+| If you want to… | Go to |
+|---|---|
+| Understand the end-to-end flow | [High Level Architecture](#high-level-architecture) → [What deploy does](#4-what-deploy-does) |
+| Know **where a new file belongs** | [Adding Something New — Quick Index](#adding-something-new--quick-index) |
+| Add a table, view, dim or fact | [dbt Projects on Snowflake](#dbt-projects-on-snowflake) |
+| Add a stored procedure, grant, task or Streamlit app | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) |
+| Understand the email alerts and `LOG_HISTORY` | [Run Logging & Email Alerts](#run-logging--email-alerts) |
+| Know why a deployment failed in a dbt hook | [Why deployment is split around dbt](#why-deployment-is-split-around-dbt) |
+
+**The single most important rule:** tables and views are owned by **dbt** (`dbt/models/`). Everything else — procedures, grants, tasks, stages, Streamlit — is owned by **SchemaChange** (`snowflake/`). Putting a table in `snowflake/` will fail PR validation.
+
+---
+
 # Overview
 
-This repository contains a reusable CI/CD framework for deploying Snowflake database objects and external Python ingestion code using GitHub Actions and the Snowflake SchemaChange library.
+This repository contains a reusable CI/CD framework that deploys **two things from one pipeline**:
+
+| Deployed | Tool | Source folder | Covers |
+|---|---|---|---|
+| Snowflake objects | **SchemaChange** | `snowflake/` | stored procedures, functions, tasks, streams, pipes, stages, file formats, dynamic tables, Snowpark, Streamlit, grants |
+| dbt project | **`snow dbt deploy`** | `dbt/` | every table and view — raw, transform and consumption models, snapshots, run logging and alerting |
+
+A single merge to `dev` or `main` deploys both, in the correct order, to the matching environment. External Python ingestion code (`python/`) runs outside Snowflake and is version-controlled alongside.
 
 The framework has been designed with the following objectives:
 
@@ -27,6 +51,11 @@ The framework follows Infrastructure as Code (IaC) principles where every Snowfl
 ---
 
 # High Level Architecture
+
+![Snowflake & dbt CI/CD Framework — Medallion Architecture & Deployment Flow](docs/architecture.svg)
+
+<details>
+<summary>Text version of the flow</summary>
 
 ```
                 GitHub Repository
@@ -65,20 +94,39 @@ The framework follows Infrastructure as Code (IaC) principles where every Snowfl
 
                        │
 
+    SchemaChange — PRE-dbt object types
+    (stored procedures, stages, functions …)
+
+                       │
+
           snow dbt deploy
+     (publishes + runs the dbt project)
 
                        │
 
-          Execute SchemaChange
-
-                       │
-
-            Deploy Snowflake Objects
+    SchemaChange — POST-dbt object types
+    (dynamic tables — anything reading dbt tables)
 
                        │
 
              Update Change History
 ```
+
+</details>
+
+## Why deployment is split around dbt
+
+dbt and SchemaChange depend on each other's output in **opposite directions**, so a single ordering cannot satisfy both:
+
+| Dependency | Requirement |
+|---|---|
+| dbt's `on-run-end` hooks call `RAW.UTILS.SEND_SUCCESS_ALERT` / `SEND_FAILURE_ALERT` | Those procedures must exist **before** dbt runs |
+| A dynamic table doing `SELECT … FROM <a dbt model>` | The dbt tables must exist **before** that DDL runs |
+
+`deploy.py` therefore runs SchemaChange **twice**, around the dbt step. Which object types land in which pass is decided in code by
+`SchemaChangeRunner.POST_DBT_OBJECT_TYPES` (`deployment/core/schemachange_runner.py`) — deliberately not in `deployment.yml`, because it is a structural rule about how the two tools interact, not a per-environment setting.
+
+Today only `dynamic_tables` runs after dbt. **If you add an object type that reads a dbt-built table, add its name to that set** or it will deploy before the table exists.
 
 ---
 
@@ -129,12 +177,16 @@ Direct pushes to `dev` or `main` also trigger deploy (avoid — use PRs only).
 2. **Assign migration versions** — rename `V__*.sql` placeholders to the next repo-wide version (e.g. `V__create_emp.sql` → `V3.2.0__create_emp.sql`) and commit back to the branch.
 3. **Connect** to Snowflake using GitHub secrets.
 4. **Fetch** the Snowflake Git Repository (if enabled — for Snowpark SPs and Streamlit apps).
-5. **Deploy the dbt project** with `snow dbt deploy` (creates or versions the Snowflake dbt project object from `dbt/`).
-6. **Run SchemaChange** per folder target (tasks can `EXECUTE DBT PROJECT` because the object already exists):
-   - Folder path `snowflake/tasks/TRANSFORM/POSTGRES/` → deploys to `DEV_TRANSFORM.POSTGRES`
-   - Object types run in order: file formats → stages → streams → functions → … → **tasks** (`EXECUTE DBT PROJECT`) → snowpark → **streamlit** → **grants**
-   - **Tables and views are not deployed by SchemaChange** — they are created by dbt models under `dbt/models/`
-7. **Record** applied migrations in the change history table (`CONFIG_DB.SCHEMACHANGE.DEV_CHANGE_HISTORY` or PROD equivalent).
+5. **SchemaChange, pre-dbt pass** — every object type *except* those in `POST_DBT_OBJECT_TYPES`:
+   - Folder path `snowflake/storedprocedures/RAW/UTILS/` → deploys to `DEV_RAW.UTILS`
+   - Order follows `deployment_order` in `deployment.yml`: file formats → stages → streams → functions → **stored procedures** → tasks → pipes → snowpark → streamlit → grants
+   - This is where the alert procedures are created, so they exist before dbt runs
+6. **Deploy the dbt project** with `snow dbt deploy` — publishes `dbt/` as the Snowflake dbt project object.
+   > **Important:** `snow dbt deploy` does not merely upload files — it also **executes** dbt (compile/parse), which fires the `on-run-end` hooks. That is why a bug in those hooks can fail a deployment. See [Run Logging & Email Alerts](#run-logging--email-alerts).
+7. **SchemaChange, post-dbt pass** — object types that may read dbt-built tables (currently `dynamic_tables`).
+8. **Record** applied migrations in the change history table (`CONFIG_DB.SCHEMACHANGE.DEV_CHANGE_HISTORY` or PROD equivalent).
+
+**Tables and views are not deployed by SchemaChange** — they are owned by dbt models under `dbt/models/`. There are no `snowflake/tables/` or `snowflake/views/` folders, by design.
 
 Each migration runs **once**. Repeatable scripts (`R__*.sql`) re-run only when their content changes.
 
@@ -153,15 +205,214 @@ Each migration runs **once**. Repeatable scripts (`R__*.sql`) re-run only when t
 
 # dbt Projects on Snowflake
 
-CI publishes `dbt/` with `snow dbt deploy` **before** SchemaChange. SchemaChange then creates `TASK_EXECUTE_DBT`, which runs `EXECUTE DBT PROJECT`.
+The whole `dbt/` folder is published to Snowflake as a **DBT PROJECT object** by `snow dbt deploy`.
 
 | What | Where |
 |---|---|
-| dbt project | `dbt/` (`dbt_project.yml`, models, `profiles.yml` template) |
+| dbt project source | `dbt/` |
 | Deploy config | `deployment/config/deployment.yml` → `dbt:` |
-| Task that runs dbt | `snowflake/tasks/TRANSFORM/POSTGRES/R__task_execute_dbt.sql` |
+| Runner | `deployment/core/dbt_deploy_runner.py` |
+| Published object (dev) | `DEV_DBT.PROJECTS_SCH.DBT` (target `dev`) |
+| Published object (prod) | `PROD_DBT.PROJECTS_SCH.DBT` (target `prod`) |
 
-On `dev` the object is `DEV_TRANSFORM.POSTGRES.DBT` (target `dev`). On `main` it is `PROD_TRANSFORM.POSTGRES.DBT` (target `prod`). Jinja in `dbt_project.yml` and `profiles.yml` (`{{ databases.* }}`, `{{ warehouses.ELT }}`) is rendered at deploy time — model SQL `{{ ref() }}` is not touched.
+## Folder layout
+
+```
+dbt/
+├── dbt_project.yml          project config + on-run-end hooks (deploy-time Jinja)
+├── profiles.yml             connection template (deploy-time Jinja)
+├── packages.yml             dbt packages (currently none active)
+│
+├── models/
+│   ├── sources/source.yml   source() definitions -> raw Postgres landing tables
+│   ├── transform/           cleansed / typed layer  -> DEV_TRANSFORM.postgres
+│   │   ├── properties.yml   per-model config (see warning below)
+│   │   └── *.sql
+│   └── consumption/         dims and facts          -> DEV_CONSUMPTION.analytics
+│       ├── ephemeral/       inlined CTEs, no table is created
+│       └── *.sql
+│
+├── snapshots/               SCD2 history (YAML-defined)
+├── macros/                  reusable Jinja - logging, alerting, SCD2 helpers
+└── analyses/                ad-hoc SQL, never deployed as a model
+```
+
+## The three layers
+
+| Layer | Folder | Database | Schema | Purpose |
+|---|---|---|---|---|
+| Source | `models/sources/` | `{{ databases.RAW }}` | `postgres` | Declares landing tables; creates nothing |
+| Transform | `models/transform/` | `{{ databases.TRANSFORM }}` | `postgres` | Cleanse, rename, type-cast. One model per source table |
+| Consumption | `models/consumption/` | `{{ databases.CONSUMPTION }}` | `analytics` | `dim_*` / `fact_*` for reporting |
+| Ephemeral | `models/consumption/ephemeral/` | — | — | Inlined as a CTE; **no table is created** |
+
+Databases come from `dbt_project.yml`; schemas come from each model's own `config()`.
+`macros/generate_schema_name.sql` is overridden to return the custom schema **verbatim** — so `schema='analytics'` lands in `analytics`, *not* the dbt default `POSTGRES_analytics`.
+
+## Naming conventions
+
+| Object | Convention | Examples |
+|---|---|---|
+| Transform model | snake_case, mirrors the source table name | `customers.sql`, `qb_invoices.sql` |
+| Dimension | `dim_<entity>` | `dim_invoices.sql`, `dim_deals.sql` |
+| Fact | `fact_<process>` | `fact_deals.sql` |
+| Ephemeral | `eph_<entity>` | `eph_customers.sql` |
+| Snapshot | `dim_<entity>` in `snapshots/` | `dim_customers.yml` |
+| Macro | verb or purpose, snake_case | `log_history_from_results.sql` |
+| Columns | `_dt` = date, `_ts` = timestamp, `_id` = key | `created_dt`, `load_dt`, `quote_id` |
+
+## How to add a new dbt model
+
+**1. Declare the source** (only if it is a new landing table) in `models/sources/source.yml`:
+
+```yaml
+sources:
+  - name: postgres
+    database: {{ databases.RAW }}
+    schema: postgres
+    tables:
+      - name: my_new_table          # <- add here
+```
+
+**2. Add the transform model** — `models/transform/my_new_table.sql`:
+
+```sql
+{{
+config(
+materialized = 'incremental',
+incremental_strategy = 'append',
+transient = false
+)
+}}
+select
+     id
+    ,coalesce(name, '') name
+    ,date(created_at) created_dt
+    ,date(load_time) load_dt
+from {{ source('postgres','my_new_table') }} c
+{% if is_incremental() %}
+where date(c.load_time) > (select coalesce(max(t.load_dt), date('2010-01-01')) from {{ this }} t)
+{% endif %}
+```
+
+**3. Add the consumption model** — `models/consumption/dim_my_new_table.sql`:
+
+```sql
+{{
+config(
+materialized = 'incremental',
+schema = 'analytics',
+incremental_strategy = 'merge',
+unique_key = ['id']
+)
+}}
+select * from {{ ref('my_new_table') }}
+```
+
+**4. Always use `ref()` / `source()`** — never write a hardcoded three-part name. `ref()` is what builds the DAG and the deploy order.
+
+**5. Open a PR.** Validation runs `validate_dbt_project.py` and `validate_dbt_owned_objects.py` (which blocks tables/views being added to `snowflake/`).
+
+## Choosing a materialization
+
+| Strategy | When | Caveat |
+|---|---|---|
+| `table` | Small, full rebuild each run | CTAS reports no row count — logs `1` unless the `COUNT(*)` fallback is in place |
+| `incremental` + `append` | Insert-only history | Needs an `is_incremental()` watermark or it re-inserts everything |
+| `incremental` + `merge` | Upsert on a key | **Must set `unique_key`** — without it dbt inserts instead of updating |
+| `ephemeral` | Reused CTE logic | No table exists; nothing to query or count |
+
+### The incremental watermark pattern
+
+Every incremental transform model uses:
+
+```sql
+{% if is_incremental() %}
+where date(c.load_time) > (select coalesce(max(t.load_dt), date('2010-01-01')) from {{ this }} t)
+{% endif %}
+```
+
+This is **day-granularity with strict `>`**, which assumes **exactly one load per day**. That holds for the current daily batch, but be aware:
+
+- A second batch **the same day is silently skipped** — permanently, with no error. You just see `0` in `LOG_HISTORY`.
+- Hand-inserting a row to test the pipeline on an already-loaded day will look like a no-op.
+
+If a source ever becomes intra-day, switch that model to a timestamp watermark (keep the full `load_time`, compare `>` on the timestamp) and `--full-refresh` once to backfill.
+
+## Two gotchas that will cost you time
+
+**1. `properties.yml` loses to in-file `config()`.**
+`models/transform/properties.yml` sets `materialized: table` for several models, but those same models declare `materialized = 'incremental'` in their own `config()` block. **The in-file config wins.** Trust the `.sql` file, not the YAML.
+
+**2. `dbt/` is a template, not a runnable dbt project.**
+`dbt_project.yml` and `profiles.yml` contain `{{ databases.* }}` and `{{ dbt_target }}`, which are resolved by `DbtDeployRunner._render_project_files()` at deploy time — **not** by dbt. Running `dbt run` or `dbt docs generate` directly against `dbt/` fails with `'databases' is undefined`. You must render the project first.
+
+That renderer only substitutes plain `{{ dotted.name }}` tokens; anything shaped like a macro call (`{{ log_history_from_results(results) }}`) is deliberately left untouched for dbt to evaluate at run time.
+
+---
+
+# Run Logging & Email Alerts
+
+Every dbt run writes one audit row per model and sends **exactly one email**.
+
+| Piece | Location | Role |
+|---|---|---|
+| `log_history_from_results` | `dbt/macros/` | `on-run-end` hook — writes one row per node to `LOG_HISTORY` |
+| `send_run_alert` | `dbt/macros/` | `on-run-end` hook — sends one email for the run |
+| `SEND_SUCCESS_ALERT` | `snowflake/storedprocedures/RAW/UTILS/` | Run summary email |
+| `SEND_FAILURE_ALERT` | `snowflake/storedprocedures/RAW/UTILS/` | Failed-models-only email |
+| `LOG_HISTORY` | `{{ databases.RAW }}.UTILS` | The audit table |
+
+Both hooks are registered in `dbt_project.yml`:
+
+```yaml
+on-run-end:
+  - "{{ log_history_from_results(results) }}"
+  - "{{ send_run_alert() }}"
+```
+
+## JOB_ID format — important
+
+`log_history_from_results` writes `JOB_ID` as:
+
+```
+<invocation_id>::<node_unique_id>
+```
+
+So **one run produces many rows**. Both alert procedures are called with the bare `invocation_id` and match rows with `LIKE :JOB_ID || '::%'` to roll up the whole run. If you write anything that reads `LOG_HISTORY` per run, use that same prefix match.
+
+## Which commands trigger logging
+
+Both macros are gated on `flags.WHICH`:
+
+```jinja
+{% if execute and results and flags.WHICH in ('run', 'build', 'snapshot', 'seed') %}
+```
+
+This exists because `on-run-end` also fires on **compile/parse**, which is what `snow dbt deploy` performs. Without the gate, every deployment would email you, log SUCCESS rows for models that were never materialized, and — worst — let an alerting bug fail the deployment.
+
+**If you add a dbt command that should be logged (e.g. `test`), add it to both macros.** A command missing from that list logs nothing, silently.
+
+## Email behaviour
+
+| Outcome | Emails |
+|---|---|
+| Run succeeds | **1** — model count, total rows, total duration, per-model table |
+| Run has failures | **1** — only the failed models, each with its error text |
+
+Failure messages are HTML-escaped and truncated to 1500 characters, so a long stack trace cannot break the email or blow the size limit.
+
+## `ROWS_PROCESSED` — read with care
+
+The value comes from dbt's `adapter_response.rows_affected`, which is **whatever the last statement reported**:
+
+| Materialization | What the number means |
+|---|---|
+| `incremental` (INSERT/MERGE) | Accurate — rows genuinely written |
+| `table` (CTAS) | **Always `1`** — Snowflake returns a status row, not a count |
+| `ephemeral` | Always `0` — nothing is executed |
+
+A consumption model with no `is_incremental()` filter merges its **entire** source every run, so a large `ROWS_PROCESSED` there means wasted work, not a busy day — the fix belongs in the model, not the logging.
 
 ---
 
@@ -405,7 +656,7 @@ GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
 ## Rules
 
 - Use **`R__*.sql`** repeatable scripts for grants (re-applied when content changes).
-- Keep **`CREATE`** DDL in object folders (`tables/`, `storedprocedures/`, etc.).
+- Keep **`CREATE`** DDL in object folders (`storedprocedures/`, `dynamic_tables/`, etc.) — tables and views belong in `dbt/models/`.
 - Keep **`GRANT`** / **`GRANT OWNERSHIP`** in `snowflake/grants/` only.
 - Use `COPY CURRENT GRANTS` (not `COPY GRANTS`) for ownership transfers in Snowflake.
 - PR validation checks that `access_roles` is configured when grant scripts exist.
@@ -425,49 +676,69 @@ snowflake-cicd/
 │       └── pr-validation.yml
 │
 
-├── deployment/
-│
+├── deployment/                        the CI/CD engine
+│   ├── deploy.py                      entry point - orchestrates the 3 phases
+│   ├── assign_versions.py             V__ -> V1.2.3__ renaming entry point
+│   │
 │   ├── config/
-│   │      deployment.yml
-│   │      schemachange-config.yml
-│
+│   │      deployment.yml              connection, deployment_order, roles, warehouses, dbt
+│   │      schemachange-config.yml     schemachange CLI settings
+│   │
 │   ├── core/
-│   │      logger.py
-│   │      snowflake_connection.py
-│   │      git_repository.py
-│   │      schemachange_runner.py
+│   │      config_loader.py            YAML + ${ENV_VAR} expansion
+│   │      logger.py                   the timestamped console logger
+│   │      snowflake_connection.py     key-pair auth connection
+│   │      git_repository.py           ALTER GIT REPOSITORY ... FETCH
+│   │      schema_discovery.py         folder tree -> database/schema targets
+│   │      schemachange_runner.py      runs schemachange per target (PRE/POST dbt)
+│   │      dbt_deploy_runner.py        renders dbt/ then runs snow dbt deploy
+│   │      jinja_vars.py               builds databases.* / warehouses.* / access_roles.*
+│   │      version_assigner.py         assigns the next repo-wide version
+│   │      migration_versions.py       version parsing helpers
+│   │      streamlit_preflight.py      pre-checks before Streamlit deploys
+│   │
+│   └── validation/                    each file = one PR-validation rule
+│          validate.py                 orchestrator
+│          validate_project_structure.py
+│          validate_schema_paths.py
+│          validate_version_format.py
+│          validate_duplicate_versions.py
+│          validate_immutable_migrations.py
+│          validate_grant_roles.py
+│          validate_warehouses_config.py
+│          validate_hardcoded_database_refs.py
+│          validate_hardcoded_warehouse_refs.py
+│          validate_dbt_project.py
+│          validate_dbt_owned_objects.py
 │
-│   ├── validation/
-│   │      validate.py
-│   │      validate_project_structure.py
-│   │      validate_version_format.py
-│   │      validate_grant_roles.py
-│
-│   └── deploy.py
-│
-
-├── snowflake/
-│   ├── tables/
-│   ├── views/
-│   ├── storedprocedures/
+├── snowflake/                         deployed by SchemaChange
+│   ├── storedprocedures/              <DB>/<SCHEMA>/R__*.sql
 │   ├── functions/
 │   ├── streams/
 │   ├── tasks/
-│   ├── dynamic_tables/
+│   ├── dynamic_tables/                POST-dbt (may read dbt tables)
 │   ├── stages/
 │   ├── file_formats/
 │   ├── pipes/
-│   ├── grants/
-│   ├── snowpark/
-│   ├── streamlit/
-│   └── streamlit_apps/
+│   ├── grants/                        deployed last
+│   ├── snowpark/                      <DB>/<SCHEMA>/<SP_NAME>/src/
+│   ├── streamlit/                     CREATE STREAMLIT SQL
+│   └── streamlit_apps/                Streamlit Python code
+│                                      (no tables/ or views/ - dbt owns those)
 │
-├── python/
+├── dbt/                               deployed by snow dbt deploy
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   ├── models/{sources,transform,consumption}/
+│   ├── snapshots/
+│   ├── macros/
+│   └── analyses/
+│
+├── python/                            external ingestion (runs outside Snowflake)
 │
 ├── requirements.txt
-│
 ├── README.md
-│
+├── DEVELOPER_GUIDE.md
 └── .gitignore
 ```
 
@@ -580,17 +851,35 @@ Deployment workflow starts.
 
 Step 8
 
-Snowflake Git Repository fetches latest code.
+Migration versions assigned (`V__*.sql` → `V1.2.3__*.sql`) and committed back.
 
 ↓
 
 Step 9
 
-SchemaChange deploys new migrations.
+Snowflake Git Repository fetches latest code.
 
 ↓
 
 Step 10
+
+SchemaChange — PRE-dbt pass (stored procedures, stages, functions, grants …).
+
+↓
+
+Step 11
+
+`snow dbt deploy` — publishes and runs the dbt project (tables and views built here).
+
+↓
+
+Step 12
+
+SchemaChange — POST-dbt pass (dynamic tables, anything reading dbt output).
+
+↓
+
+Step 13
 
 Deployment completed.
 
@@ -1061,89 +1350,57 @@ Versioned migrations are immutable.
 Once deployed,
 
 they should never be edited.
-# Repository Structure
+# Repository Folder Description
 
-```
-snowflake-cicd/
-
-│
-├── .github/
-│   └── workflows/
-│       ├── deploy.yml
-│       └── pr-validation.yml
-│
-├── deployment/
-│   ├── config/
-│   │   ├── deployment.yml
-│   │   └── schemachange-config.yml
-│   │
-│   ├── core/
-│   │   ├── logger.py
-│   │   ├── snowflake_connection.py
-│   │   ├── git_repository.py
-│   │   └── schemachange_runner.py
-│   │
-│   ├── validation/
-│   │   ├── validate.py
-│   │   ├── validate_project_structure.py
-│   │   └── validate_version_format.py
-│   │
-│   └── deploy.py
-│
-├── snowflake/
-│   ├── tables/
-│   ├── views/
-│   ├── storedprocedures/
-│   ├── functions/
-│   ├── streams/
-│   ├── tasks/
-│   ├── dynamic_tables/
-│   ├── stages/
-│   ├── file_formats/
-│   ├── pipes/
-│   ├── grants/
-│   ├── snowpark/
-│   ├── streamlit/
-│   └── streamlit_apps/
-│
-├── python/
-│   ├── framework/
-│   ├── connectors/
-│   ├── jobs/
-│   ├── config/
-│   └── utils/
-│
-├── requirements.txt
-├── .gitignore
-└── README.md
-```
-
----
-
-## Repository Folder Description
+See [Repository Structure](#repository-structure) above for the full tree.
 
 | Folder | Purpose |
 |---------|----------|
 | `.github/workflows` | GitHub Actions workflows for PR validation and deployment |
 | `deployment` | Complete CI/CD deployment framework |
-| `deployment/config/deployment.yml` | Snowflake connection, deployment order, **access_roles**, **version_prefixes**, **warehouses** |
-| `snowflake` | All Snowflake objects managed by SchemaChange |
+| `deployment/config/deployment.yml` | Snowflake connection, deployment order, **access_roles**, **version_prefixes**, **warehouses**, **dbt** |
+| `deployment/core/schemachange_runner.py` | Runs SchemaChange; owns `POST_DBT_OBJECT_TYPES` (the pre/post-dbt split) |
+| `deployment/core/dbt_deploy_runner.py` | Renders `dbt/` then runs `snow dbt deploy` |
+| `deployment/validation` | One file per PR-validation rule |
+| `snowflake` | Snowflake objects managed by SchemaChange (**no tables/views — dbt owns those**) |
 | `snowflake/grants` | Repeatable grant/ownership scripts (deployed last) |
+| `snowflake/storedprocedures/RAW/UTILS` | Email alert procedures called by the dbt hooks |
 | `snowflake/streamlit` | `CREATE STREAMLIT` SQL (deployed via SchemaChange) |
 | `snowflake/streamlit_apps` | Streamlit Python app code (sourced from Snowflake Git Repository) |
+| `dbt` | dbt project — all tables and views, published as a Snowflake DBT PROJECT object |
+| `dbt/macros` | Logging, alerting and SCD2 helpers |
 | `python` | External ingestion framework (runs outside Snowflake) |
-| `requirements.txt` | Python dependencies for GitHub Actions |
-| `.gitignore` | Ignore local, log, and sensitive files |
-| `README.md` | Project documentation and developer guide |
+| `requirements.txt` | Python dependencies for GitHub Actions (note: **dbt is not installed locally**) |
+| `README.md` | This document — architecture, flow, dbt conventions |
+| `DEVELOPER_GUIDE.md` | File naming rules, Snowpark/Streamlit setup, do's and don'ts |
 
 ---
 
 This structure keeps responsibilities clear:
 
 - **deployment/** → CI/CD engine
-- **snowflake/** → Snowflake database objects
+- **snowflake/** → Snowflake objects *other than* tables and views
 - **snowflake/grants/** → Privileges and ownership (config-driven roles)
+- **dbt/** → Every table and view, plus run logging and alerting
 - **python/** → External ingestion code
 - **.github/** → GitHub automation
+
+---
+
+# Adding Something New — Quick Index
+
+| I want to add… | Where it goes | Naming | Notes |
+|---|---|---|---|
+| A table or view | `dbt/models/` | see [dbt conventions](#naming-conventions) | **Never** in `snowflake/` — validation blocks it |
+| A stored procedure | `snowflake/storedprocedures/<DB>/<SCHEMA>/` | `R__<description>.sql` | Repeatable; re-runs when content changes |
+| A one-off DDL change | `snowflake/<type>/<DB>/<SCHEMA>/` | `V__<description>.sql` | CI assigns the version number |
+| A dynamic table | `snowflake/dynamic_tables/<DB>/<SCHEMA>/` | `R__<description>.sql` | Deploys **after** dbt |
+| A grant | `snowflake/grants/<DB>/<SCHEMA>/` | `R__<description>.sql` | Use `{{ grant_role }}`, never a literal role |
+| A Snowpark SP | `snowflake/snowpark/<DB>/<SCHEMA>/<SP_NAME>/src/` | see DEVELOPER_GUIDE | Python + DDL are separate files |
+| A Streamlit app | `snowflake/streamlit_apps/` + `snowflake/streamlit/` | `R__<description>.sql` | Python and SQL live apart |
+| A new object type that reads dbt tables | any `snowflake/<type>/` | — | **Also add it to `POST_DBT_OBJECT_TYPES`** |
+
+Folder path always maps to the deploy target: `snowflake/<type>/<DATABASE_LAYER>/<SCHEMA>/` → `{ENV}_{LAYER}.{SCHEMA}`.
+Example: `snowflake/storedprocedures/RAW/UTILS/` on `dev` → `DEV_RAW.UTILS`.
 
 ---
