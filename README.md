@@ -1407,31 +1407,3 @@ This structure keeps responsibilities clear:
 Folder path always maps to the deploy target: `snowflake/<type>/<DATABASE_LAYER>/<SCHEMA>/` → `{ENV}_{LAYER}.{SCHEMA}`.
 Example: `snowflake/storedprocedures/RAW/UTILS/` on `dev` → `DEV_RAW.UTILS`.
 
----
-
-# Regenerating the diagram
-
-`docs/architecture.svg` is the **editable source**; `docs/architecture.png` is what the README displays (PNG renders reliably everywhere — GitHub's SVG sanitizer can drop arrow markers, and some git clients don't render SVG at all).
-
-After editing the SVG, re-export the PNG with headless Chrome:
-
-```bash
-python3 - <<'PY'
-svg = open('docs/architecture.svg').read()
-open('/tmp/wrap.html','w').write(
-  "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
-  "html,body{margin:0;padding:0;background:#fff;overflow:hidden}"
-  "svg{display:block}</style></head><body>" + svg + "</body></html>")
-PY
-
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless --disable-gpu --hide-scrollbars \
-  --force-device-scale-factor=2 --window-size=1300,1080 \
-  --screenshot=docs/architecture.png /tmp/wrap.html
-```
-
-`--window-size` must match the SVG's `viewBox` (currently `1300 1080`); `--force-device-scale-factor=2` gives a crisp 2600×2160 export. If you change the SVG canvas size, change the window size to match or the export will be cropped.
-
-**Keep the diagram in sync** — it hardcodes facts that drift: the contents of `POST_DBT_OBJECT_TYPES`, schema names, and the layer list. Adding an object type to the post-dbt pass means editing the SVG too.
-
----
